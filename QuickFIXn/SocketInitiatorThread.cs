@@ -4,6 +4,7 @@ using System.Threading;
 using System.IO;
 using System;
 using System.Diagnostics;
+using log4net;
 
 namespace QuickFix
 {
@@ -26,9 +27,11 @@ namespace QuickFix
         private IPEndPoint socketEndPoint_;
         protected SocketSettings socketSettings_;
         private bool isDisconnectRequested_ = false;
+        private log4net.ILog _log = LogManager.GetLogger("RollingFileQuickFixAppender");
 
         public SocketInitiatorThread(Transport.SocketInitiator initiator, Session session, IPEndPoint socketEndPoint, SocketSettings socketSettings)
         {
+            _log.Info("initialising SocketInitiatorThread");
             isDisconnectRequested_ = false;
             initiator_ = initiator;
             session_ = session;
@@ -40,6 +43,7 @@ namespace QuickFix
 
         public void Start()
         {
+            _log.Info("starting SocketInitiatorThread");
             isDisconnectRequested_ = false;
             thread_ = new Thread(new ParameterizedThreadStart(Transport.SocketInitiator.SocketInitiatorThreadStart));
             thread_.Start(this);
@@ -134,6 +138,8 @@ namespace QuickFix
             // also be performed there
             try
             {
+                
+
                 // Begin read if it is not already started
                 if (currentReadRequest_ == null)
                     currentReadRequest_ = stream_.BeginRead(buffer, 0, buffer.Length, callback: null, state: null);
@@ -143,6 +149,7 @@ namespace QuickFix
 
                 if (currentReadRequest_.IsCompleted)
                 {
+                    _log.InfoFormat("socketinitiatorthread: receiving, thread id: {0}", Thread.CurrentThread.ManagedThreadId);
                     // Make sure to set currentReadRequest_ to before retreiving result 
                     // so a new read can be started next time even if an exception is thrown
                     var request = currentReadRequest_;
@@ -187,6 +194,7 @@ namespace QuickFix
 
         public bool Send(string data)
         {
+            _log.InfoFormat("socketinitiatorthread: sending, thread id: {0}", Thread.CurrentThread.ManagedThreadId);
             byte[] rawData = System.Text.Encoding.UTF8.GetBytes(data);
             stream_.Write(rawData, 0, rawData.Length);
             return true;

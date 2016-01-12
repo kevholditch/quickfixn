@@ -1,6 +1,8 @@
 ﻿using System.Net.Sockets;
 using System.IO;
 using System;
+using System.Threading;
+using log4net;
 
 namespace QuickFix
 {
@@ -17,6 +19,7 @@ namespace QuickFix
         private Stream stream_;     //will be null when initialized
         private TcpClient tcpClient_;
         private ClientHandlerThread responder_;
+        private log4net.ILog _log = LogManager.GetLogger("RollingFileQuickFixAppender");
 
         /// <summary>
         /// Keep a handle to the current outstanding read request (if any)
@@ -76,7 +79,7 @@ namespace QuickFix
             // NOTE: THIS FUNCTION IS EXACTLY THE SAME AS THE ONE IN SocketReader any changes here should 
             // also be performed there
             try
-            {
+            {                
                 // Begin read if it is not already started
                 if (currentReadRequest_ == null)
                     currentReadRequest_ = stream_.BeginRead(buffer, 0, buffer.Length, callback: null, state: null);
@@ -86,6 +89,8 @@ namespace QuickFix
 
                 if (currentReadRequest_.IsCompleted)
                 {
+                    _log.InfoFormat("socketreader: receiving, thread id: {0}", Thread.CurrentThread.ManagedThreadId);
+
                     // Make sure to set currentReadRequest_ to before retreiving result 
                     // so a new read can be started next time even if an exception is thrown
                     var request = currentReadRequest_;
@@ -304,6 +309,7 @@ namespace QuickFix
 
         public int Send(string data)
         {
+            _log.InfoFormat("socketreader: sending, thread id: {0}", Thread.CurrentThread.ManagedThreadId);
             byte[] rawData = System.Text.Encoding.UTF8.GetBytes(data);
             stream_.Write(rawData, 0, rawData.Length);
             return rawData.Length;

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using log4net;
 
 namespace QuickFix
 {
@@ -30,6 +31,7 @@ namespace QuickFix
         private long logoutTimeoutAsMilliSecs_ = 2 * 1000;
         private ResendRange resendRange_ = new ResendRange();
         private Dictionary<int, Message> msgQueue = new Dictionary<int, Message>();
+        private static log4net.ILog _log = LogManager.GetLogger("RollingFileQuickFixAppender");
 
         private ILog log_;
 
@@ -115,7 +117,12 @@ namespace QuickFix
         public DateTime LastReceivedTimeDT
         {
             get { lock (sync_) { return lastReceivedTimeDT_; } }
-            set { lock (sync_) { lastReceivedTimeDT_ = value; } }
+            set {
+                lock (sync_)
+                {
+                    _log.InfoFormat("updating last received datetime to: {0}", value);
+                    lastReceivedTimeDT_ = value;
+                } }
         }
 
 
@@ -260,8 +267,20 @@ namespace QuickFix
         /// <returns>true if within heartbeat interval</returns>
         public static bool WithinHeartbeat(DateTime now, int heartBtIntMillis, DateTime lastSentTime, DateTime lastReceivedTime)
         {
-            return ((now.Subtract(lastSentTime).TotalMilliseconds) < Convert.ToDouble(heartBtIntMillis))
-                && ((now.Subtract(lastReceivedTime).TotalMilliseconds) < Convert.ToDouble(heartBtIntMillis));
+            var sentTimeout = (now.Subtract(lastSentTime).TotalMilliseconds) < Convert.ToDouble(heartBtIntMillis);
+            var receivedTimeout = (now.Subtract(lastReceivedTime).TotalMilliseconds) < Convert.ToDouble(heartBtIntMillis);
+            var result = sentTimeout && receivedTimeout;
+
+            if (!result)
+            {
+                _log.ErrorFormat("within heartbeat false, sent timed out: {0} received timed out: {1}", !sentTimeout, !receivedTimeout);
+            }
+
+            return result;
+            
+
+            //return ((now.Subtract(lastSentTime).TotalMilliseconds) < Convert.ToDouble(heartBtIntMillis))
+            //    && ((now.Subtract(lastReceivedTime).TotalMilliseconds) < Convert.ToDouble(heartBtIntMillis));
         }
         public bool WithinHeartbeat()
         {

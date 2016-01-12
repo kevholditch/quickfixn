@@ -1,5 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using System.Threading;
+using log4net;
 using QuickFix.Fields;
 
 namespace QuickFix
@@ -24,6 +28,7 @@ namespace QuickFix
         private IMessageFactory msgFactory_;
         private bool appDoesEarlyIntercept_;
         private static readonly HashSet<string> AdminMsgTypes = new HashSet<string>() { "0", "A", "1", "2", "3", "4", "5" };
+        private log4net.ILog _log = LogManager.GetLogger("RollingFileQuickFixAppender");
 
         #endregion
 
@@ -342,13 +347,23 @@ namespace QuickFix
         /// </summary>
         /// <param name="message"></param>
         /// <returns></returns>
-        public bool Send(string message)
+        public bool Send(string message, bool heartbeat = false)
         {
             lock (sync_)
             {
+                if (heartbeat)
+                    _log.Info("Inside send checking responder");
                 if (null == responder_)
+                {
+                    if (heartbeat)
+                        _log.Info("Responder is null");
                     return false;
+                }
                 this.Log.OnOutgoing(message);
+                if (heartbeat)
+                {
+                    _log.InfoFormat("Responder is of type: {0} length in bytes: {1}", responder_.GetType().Name, Encoding.UTF8.GetBytes(message).Length);
+                }
                 return responder_.Send(message);
             }
         }
@@ -390,6 +405,8 @@ namespace QuickFix
         {
             lock (sync_)
             {
+                _log.ErrorFormat("disconnecting for reason: {0}", reason);
+
                 if (null != responder_)
                 {
                     this.Log.OnEvent("Session " + this.SessionID + " disconnecting: " + reason);
@@ -482,25 +499,31 @@ namespace QuickFix
 
             if (state_.TimedOut())
             {
+                _log.ErrorFormat("session timed out waiting for heartbeat");
+
                 if (this.SendLogoutBeforeTimeoutDisconnect)
                     GenerateLogout();
+                
                 Disconnect("Timed out waiting for heartbeat");
             }
             else
             {
                 if (state_.NeedTestRequest())
                 {
-
+                    _log.Info("sending test request");
                     GenerateTestRequest("TEST");
                     state_.TestRequestCounter += 1;
                     this.Log.OnEvent("Sent test request TEST");
                 }
                 else if (state_.NeedHeartbeat())
                 {
+                    _log.Info("sending heartbeat");
                     GenerateHeartbeat();
                 }
             }
         }
+
+        
 
         /// <summary>
         /// Process a message (in string form) from the counterparty
@@ -557,6 +580,7 @@ namespace QuickFix
                 Header header = message.Header;
                 string msgType = msgBuilder.MsgType.Obj;
                 string beginString = msgBuilder.BeginString;
+                _log.InfoFormat("recevied message of type: {0}", msgType);
 
                 if (!beginString.Equals(this.SessionID.BeginString))
                     throw new UnsupportedVersion();
@@ -589,7 +613,10 @@ namespace QuickFix
                 else if (!IsLoggedOn)
                     Disconnect(string.Format("Received msg type '{0}' when not logged on", msgType));
                 else if (MsgType.HEARTBEAT.Equals(msgType))
+                {
+                    _log.Info("received heartbeat message");
                     NextHeartbeat(message);
+                }
                 else if (MsgType.TEST_REQUEST.Equals(msgType))
                     NextTestRequest(message);
                 else if (MsgType.SEQUENCE_RESET.Equals(msgType))
@@ -706,7 +733,7 @@ namespace QuickFix
             if (!state_.IsInitiator)
             {
                 int heartBtInt = logon.GetInt(Fields.Tags.HeartBtInt);
-                state_.HeartBtInt = heartBtInt;
+                state_.HeartBtInt = (int)Math.Floor(heartBtInt / (double)2);
                 GenerateLogon(logon);
                 this.Log.OnEvent("Responding to logon request");
             }
@@ -1454,6 +1481,7 @@ namespace QuickFix
         /// <param name="m"></param>
         protected void InitializeHeader(Message m, int msgSeqNum)
         {
+            
             state_.LastSentTimeDT = DateTime.UtcNow;
             m.Header.SetField(new Fields.BeginString(this.SessionID.BeginString));
             m.Header.SetField(new Fields.SenderCompID(this.SessionID.SenderCompID));
@@ -1594,9 +1622,14 @@ namespace QuickFix
 
         protected bool SendRaw(Message message, int seqNum)
         {
+            
             lock (sync_)
             {
                 string msgType = message.Header.GetField(Fields.Tags.MsgType);
+                if (msgType == Fields.MsgType.HEARTBEAT)
+                {
+                    _log.Info("Sending heartbeat inside sendraw");
+                }
 
                 InitializeHeader(message, seqNum);
 
@@ -1632,7 +1665,13 @@ namespace QuickFix
                 string messageString = message.ToString();
                 if (0 == seqNum)
                     Persist(message, messageString);
-                return Send(messageString);
+                
+                if (msgType == Fields.MsgType.HEARTBEAT)
+                {
+                    _log.Info("about to send that heartbeat for real");
+                }
+
+                return Send(messageString, msgType == Fields.MsgType.HEARTBEAT);
             }
         }
 
