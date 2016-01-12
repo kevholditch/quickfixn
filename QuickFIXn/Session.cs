@@ -531,8 +531,12 @@ namespace QuickFix
         /// <param name="msgStr"></param>
         public void Next(string msgStr)
         {
+            _log.Info("Session calling next message");
             NextMessage(msgStr);
+            _log.Info("Session called next message");
+            _log.Info("Session calling next queued");
             NextQueued();
+            _log.Info("Session called next queued");
         }
 
         /// <summary>
@@ -543,13 +547,14 @@ namespace QuickFix
         {
             this.Log.OnIncoming(msgStr);
 
+            _log.Info("INV1: Newing up builder");
             MessageBuilder msgBuilder = new MessageBuilder(
                     msgStr,
                     this.ValidateLengthAndChecksum,
                     this.SessionDataDictionary,
                     this.ApplicationDataDictionary,
                     this.msgFactory_);
-
+            _log.Info("INV1: Newed up builder");
             Next(msgBuilder);
         }
 
@@ -559,6 +564,7 @@ namespace QuickFix
         /// <param name="message"></param>
         internal void Next(MessageBuilder msgBuilder)
         {
+            _log.Info("INV1: Inside Next");
             if (!IsSessionTime)
             {
                 Reset("Out of SessionTime (Session.Next(message))", "Message received outside of session time");
@@ -572,19 +578,34 @@ namespace QuickFix
 
             try
             {
+                _log.Info("INV1: Calling build");
                 message = msgBuilder.Build();
+                _log.Info("INV1: Called build");
+
 
                 if (appDoesEarlyIntercept_)
-                    ((IApplicationExt)Application).FromEarlyIntercept(message, this.SessionID);
+                {
+                    _log.Info("INV2: FromEarlyIntercept calling");
+                    ((IApplicationExt) Application).FromEarlyIntercept(message, this.SessionID);
+                    _log.Info("INV2: FromEarlyIntercept called");
+                }
+
+                
 
                 Header header = message.Header;
                 string msgType = msgBuilder.MsgType.Obj;
                 string beginString = msgBuilder.BeginString;
                 _log.InfoFormat("recevied message of type: {0}", msgType);
 
-                if (!beginString.Equals(this.SessionID.BeginString))
-                    throw new UnsupportedVersion();
 
+                if (!beginString.Equals(this.SessionID.BeginString))
+                {
+                    _log.Info("INV2: UnsupportedVersion");
+                    throw new UnsupportedVersion();
+                }
+
+
+                _log.InfoFormat("INV2: MessageType is: {0}", msgType);
 
                 if (MsgType.LOGON.Equals(msgType))
                 {
@@ -940,46 +961,58 @@ namespace QuickFix
 
         public bool Verify(Message msg, bool checkTooHigh, bool checkTooLow)
         {
+            _log.Info("INV3: Verify Entered");
             int msgSeqNum = 0;
             string msgType = "";
 
             try
             {
+                _log.Info("INV3: Getting msgtype");
                 msgType = msg.Header.GetField(Fields.Tags.MsgType);
+                _log.Info("INV3: Got msgtype");
                 string senderCompID = msg.Header.GetField(Fields.Tags.SenderCompID);
                 string targetCompID = msg.Header.GetField(Fields.Tags.TargetCompID);
 
                 if (!IsCorrectCompID(senderCompID, targetCompID))
                 {
+                    _log.Info("INV3: IsCorrectCompID is not correct");
                     GenerateReject(msg, FixValues.SessionRejectReason.COMPID_PROBLEM);
                     GenerateLogout();
                     return false;
                 }
 
                 if (checkTooHigh || checkTooLow)
+                {
+                    _log.Info("INV3: Too high or too low");
                     msgSeqNum = msg.Header.GetInt(Fields.Tags.MsgSeqNum);
+                }
 
                 if (checkTooHigh && IsTargetTooHigh(msgSeqNum))
                 {
+                    _log.Info("INV3: Doing target too high");
                     DoTargetTooHigh(msg, msgSeqNum);
                     return false;
                 }
                 else if (checkTooLow && IsTargetTooLow(msgSeqNum))
                 {
+                    _log.Info("INV3: Doing target too low");
                     DoTargetTooLow(msg, msgSeqNum);
                     return false;
                 }
 
                 if ((checkTooHigh || checkTooLow) && state_.ResendRequested())
                 {
+                    _log.Info("INV3: GetResendRange");
                     ResendRange range = state_.GetResendRange();
                     if (msgSeqNum >= range.EndSeqNo)
                     {
+                        _log.Info("INV3: EndSeqNo");
                         this.Log.OnEvent("ResendRequest for messages FROM: " + range.BeginSeqNo + " TO: " + range.EndSeqNo + " has been satisfied.");
                         state_.SetResendRange(0, 0);
                     }
                     else if (msgSeqNum >= range.ChunkEndSeqNo)
                     {
+                        _log.Info("INV3: ChunkEndSeqNo");
                         this.Log.OnEvent("Chunked ResendRequest for messages FROM: " + range.BeginSeqNo + " TO: " + range.ChunkEndSeqNo + " has been satisfied.");
                         int newChunkEndSeqNo = Math.Min(range.EndSeqNo, range.ChunkEndSeqNo + this.MaxMessagesInResendRequest);
                         GenerateResendRequestRange(msg.Header.GetField(Fields.Tags.BeginString), range.ChunkEndSeqNo + 1, newChunkEndSeqNo);
@@ -989,6 +1022,8 @@ namespace QuickFix
 
                 if (!IsGoodTime(msg))
                 {
+
+                    _log.Info("INV3: Having a good time");
                     this.Log.OnEvent("Sending time accuracy problem");
                     GenerateReject(msg, FixValues.SessionRejectReason.SENDING_TIME_ACCURACY_PROBLEM);
                     GenerateLogout();
@@ -1002,13 +1037,18 @@ namespace QuickFix
                 return false;
             }
 
+            _log.Info("INV3: About to update last received time");
+
             state_.LastReceivedTimeDT = DateTime.UtcNow;
             state_.TestRequestCounter = 0;
 
+            _log.Info("INV3: Calling your code");
             if (Message.IsAdminMsgType(msgType))
                 this.Application.FromAdmin(msg, this.SessionID);
             else
                 this.Application.FromApp(msg, this.SessionID);
+
+            _log.Info("INV3: Called your code");
 
             return true;
         }

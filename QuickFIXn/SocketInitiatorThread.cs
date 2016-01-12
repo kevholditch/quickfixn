@@ -45,7 +45,7 @@ namespace QuickFix
         {
             _log.Info("starting SocketInitiatorThread");
             isDisconnectRequested_ = false;
-            thread_ = new Thread(new ParameterizedThreadStart(Transport.SocketInitiator.SocketInitiatorThreadStart));
+            thread_ = new Thread(new ParameterizedThreadStart(Transport.SocketInitiator.SocketInitiatorThreadStart));                        
             thread_.Start(this);
         }
 
@@ -81,19 +81,23 @@ namespace QuickFix
         {
             try
             {
+                _log.Info("Read entered calling readsome");
                 int bytesRead = ReadSome(readBuffer_, 1000);
                 if (bytesRead > 0)
                     parser_.AddToStream(System.Text.Encoding.UTF8.GetString(readBuffer_, 0, bytesRead));
                 else if (null != session_)
                 {
+                    _log.Info("Read calling sesson Next");
                     session_.Next();
+                    _log.Info("Read called sesson Next");
                 }
                 else
                 {
                     throw new QuickFIXException("Initiator timed out while reading socket");
                 }
-
+                _log.Info("Read calling sesson ProcessStream");
                 ProcessStream();
+                _log.Info("Read called sesson ProcessStream");
                 return true;
             }
             catch (System.ObjectDisposedException e)
@@ -134,6 +138,7 @@ namespace QuickFix
         /// <exception cref="System.Net.Sockets.SocketException">On connection reset</exception>
         protected int ReadSome(byte[] buffer, int timeoutMilliseconds)
         {
+            _log.Info("ReadSome entered");
             // NOTE: THIS FUNCTION IS EXACTLY THE SAME AS THE ONE IN SocketReader any changes here should 
             // also be performed there
             try
@@ -145,6 +150,7 @@ namespace QuickFix
                     currentReadRequest_ = stream_.BeginRead(buffer, 0, buffer.Length, callback: null, state: null);
 
                 // Wait for it to complete (given timeout)
+                _log.Info("ReadSome waitone");
                 currentReadRequest_.AsyncWaitHandle.WaitOne(timeoutMilliseconds);
 
                 if (currentReadRequest_.IsCompleted)
@@ -169,6 +175,7 @@ namespace QuickFix
                 var inner = ex.InnerException as SocketException;
                 if (inner != null && inner.SocketErrorCode == SocketError.TimedOut)
                 {
+                    _log.Info("ReadSome timed out.");
                     // Nothing read 
                     return 0;
                 }
@@ -183,10 +190,12 @@ namespace QuickFix
 
         private void ProcessStream()
         {
-            string msg;
+            string msg;            
             while (parser_.ReadFixMessage(out msg))
             {
+                _log.Info("Session next calling");
                 session_.Next(msg);
+                _log.Info("Session next called");
             }
         }
 
